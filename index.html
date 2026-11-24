@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Мини-приложение «Отчёт» бота-тренера. v2.1 (24.11.2026): картинки персонажа из закрытого хранилища; игра — персонаж, уровни, задания, ачивки, прогноз, календарь, карта мышц, фото до/после. -->
+<!-- Мини-приложение «Отчёт» бота-тренера. v2.2 (24.11.2026): тренировка дня с отметкой подходов и таймером отдыха; картинки персонажа из закрытого хранилища; игра — персонаж, уровни, задания, ачивки, прогноз, календарь, карта мышц, фото до/после. -->
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -148,10 +148,42 @@
   .modal[hidden] { display: none; }
   .modal img { max-width: 100%; max-height: 70vh; border-radius: 16px; }
   .modal .cap { text-align: center; margin-top: 10px; font: 18px var(--display); }
+
+  /* Тренировка дня */
+  .wo-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .wo-head .when { font: 13px var(--display); color: var(--gold); white-space: nowrap; }
+  .wo-title { font: 20px var(--display); margin: 2px 0 4px; }
+  .wo-ex { border-top: 1px solid var(--line); padding: 12px 0; }
+  .wo-ex:first-of-type { border-top: 0; }
+  .wo-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .wo-row .nm { flex: 1; font-weight: 600; }
+  .wo-row .nm small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .dots { display: flex; gap: 5px; }
+  .dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--dim); }
+  .dots i.on { background: var(--good); border-color: var(--good); }
+  .wo-ex.done .nm { color: var(--muted); }
+  .editor { display: none; margin-top: 10px; background: var(--card-2); border-radius: 14px; padding: 12px; }
+  .wo-ex.open .editor { display: block; }
+  .steppers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stepper { text-align: center; }
+  .stepper .lb { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .stepper .ctl { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .stepper button { width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--card); color: var(--text); font-size: 20px; cursor: pointer; }
+  .stepper .v { font: 22px var(--display); }
+  .go { width: 100%; margin-top: 10px; border: 0; border-radius: 14px; padding: 13px; font: 16px var(--display); background: var(--fire); color: #1a0d02; cursor: pointer; }
+  .go:disabled { opacity: .45; }
+  .undo { background: none; border: 0; color: var(--muted); font-size: 12px; margin-top: 8px; cursor: pointer; text-decoration: underline; }
+  .rest { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 15; background: #000d; backdrop-filter: blur(8px);
+    border: 1px solid var(--fire); border-radius: 18px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; max-width: 536px; margin: 0 auto; }
+  .rest[hidden] { display: none; }
+  .rest .t { font: 28px var(--display); color: var(--gold); min-width: 74px; }
+  .rest .tx { flex: 1; font-size: 13px; color: var(--muted); }
+  .rest button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
 </style>
 </head>
 <body>
 <main id="app"><div class="err">Загружаю качалку…</div></main>
+<div class="rest" id="rest" hidden><div class="t num" id="restT">1:30</div><div class="tx" id="restTx">Отдых. Дыши, пей воду.</div><button id="restSkip">Пропустить</button></div>
 <div class="modal" id="modal" hidden><div><img id="modalImg" alt=""><div class="cap" id="modalCap"></div><div class="sub" style="text-align:center" id="modalSub"></div></div></div>
 <script>
 const API = "https://pfdiblftrpeqjabuppcw.supabase.co/functions/v1/app";
@@ -222,6 +254,7 @@ function render(d) {
   <nav class="tabs" role="tablist">${[["main", "Главная"], ["weight", "Вес"], ["food", "Еда"], ["gym", "Зал"], ["photo", "Фото"]].map(([k, l], i) => `<button role="tab" data-tab="${k}" aria-selected="${i === 0}">${l}</button>`).join("")}</nav>
 
   <section data-panel="main">
+    ${workoutCard(d)}
     <div class="card">
       <div class="qhead"><h3>Задания на сегодня</h3><b class="num">${qDone}/${d.quests.length}</b></div>
       ${d.quests.map((q) => `<div class="quest ${q.done ? "done" : q.fail ? "fail" : ""}"><div class="ic">${q.emoji}</div>
@@ -283,6 +316,7 @@ function render(d) {
     <div class="card"><h3>До / после</h3>${photos(d.photos || [])}</div>
   </section>`;
 
+  bindWorkout(d);
   const panels = { weight: () => drawWeight(d), food: () => drawFood(d.days), gym: () => drawEx(d, 0), photo: () => initBA() };
   document.querySelectorAll(".tabs button").forEach((btn) => btn.onclick = () => {
     document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === btn));
@@ -416,6 +450,103 @@ function drawEx(d, i) {
   const first = pts[0].value, last = pts[pts.length - 1].value;
   $("#exNote").textContent = pts.length < 2 ? (e.bodyweight ? "Пока одна тренировка — после следующей увидишь динамику." : "Расчётный максимум на 1 повтор. После следующей тренировки появится динамика.")
     : `С ${fmtD(pts[0].date)}: ${last >= first ? "+" : ""}${n1(last - first)} ${unit} (${last >= first ? "+" : ""}${Math.round((last / first - 1) * 100)}%)`;
+}
+
+// ---------- Тренировка дня ----------
+let SETS = [];      // подходы, отмеченные сегодня {exercise_id, set_no, weight_kg, reps}
+let EDIT = {};      // exercise_id → {w, r} в редакторе
+const DOW = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+function whenLabel(date, today) {
+  if (date === today) return "СЕГОДНЯ";
+  const diff = Math.round((Date.parse(date) - Date.parse(today)) / 864e5);
+  return diff === 1 ? "ЗАВТРА" : `${DOW[new Date(date + "T12:00:00Z").getUTCDay()].toUpperCase()} ${fmtD(date)}`;
+}
+function stepFor(w) { return w >= 20 ? 2.5 : w > 0 ? 1 : 0; }
+function workoutCard(d) {
+  const w = d.workout;
+  SETS = d.sets_today || [];
+  if (!w) return `<div class="card"><h3>Тренировка</h3><div class="empty">План на ближайшие дни ещё не собран — тренер соберёт его вечером.</div></div>`;
+  const isToday = w.date === d.today;
+  return `<div class="card" id="wo"><div class="wo-head"><h3>Тренировка</h3><span class="when">${whenLabel(w.date, d.today)}</span></div>
+    <div class="wo-title">${esc(w.title)}</div><div class="sub">${esc(w.note || "")}</div>
+    ${w.items.map((it) => exRow(it, isToday)).join("")}
+    ${isToday ? "" : `<div class="sub" style="margin-top:8px">Отмечать подходы можно в день тренировки.</div>`}</div>`;
+}
+function exRow(it, isToday) {
+  const done = SETS.filter((s) => s.exercise_id === it.exercise_id);
+  const n = Math.max(it.n_sets, done.length);
+  const all = done.length >= it.n_sets;
+  const wtxt = it.weight > 0 ? `${n1(it.weight)} кг` : "свой вес";
+  const lastDone = done[done.length - 1];
+  const e = EDIT[it.exercise_id] ?? { w: lastDone ? +lastDone.weight_kg : it.weight, r: lastDone ? lastDone.reps : it.rep_max };
+  EDIT[it.exercise_id] = e;
+  return `<div class="wo-ex ${all ? "done" : ""}" data-ex="${it.exercise_id}">
+    <div class="wo-row"><div class="nm">${esc(it.exercise)}<small>${it.sets} · ${wtxt}${it.last ? ` · было ${esc(it.last)}` : ""}</small></div>
+      <div class="dots" aria-label="Сделано ${done.length} из ${it.n_sets}">${Array.from({ length: n }, (_, i) => `<i class="${i < done.length ? "on" : ""}"></i>`).join("")}</div></div>
+    ${isToday ? `<div class="editor">
+      <div class="steppers">
+        <div class="stepper"><div class="lb">Вес, кг</div><div class="ctl"><button data-d="w-">−</button><span class="v num" data-v="w">${it.weight > 0 || e.w > 0 ? n1(e.w) : "—"}</span><button data-d="w+">+</button></div></div>
+        <div class="stepper"><div class="lb">Повторы</div><div class="ctl"><button data-d="r-">−</button><span class="v num" data-v="r">${e.r}</span><button data-d="r+">+</button></div></div>
+      </div>
+      <button class="go" data-go>✓ Подход ${done.length + 1}</button>
+      ${done.length ? `<button class="undo" data-undo>отменить последний подход</button>` : ""}
+    </div>` : ""}</div>`;
+}
+function bindWorkout(d) {
+  const box = document.getElementById("wo"); if (!box || !d.workout) return;
+  const items = Object.fromEntries(d.workout.items.map((it) => [it.exercise_id, it]));
+  box.onclick = async (ev) => {
+    const ex = ev.target.closest(".wo-ex"); if (!ex) return;
+    const id = +ex.dataset.ex, it = items[id], e = EDIT[id];
+    if (ev.target.closest(".wo-row")) { const was = ex.classList.contains("open"); box.querySelectorAll(".wo-ex.open").forEach((x) => x.classList.remove("open")); if (!was) ex.classList.add("open"); haptic(); return; }
+    const dd = ev.target.closest("[data-d]")?.dataset.d;
+    if (dd) {
+      const st = stepFor(Math.max(e.w, it.weight));
+      if (dd === "w+") e.w = Math.round((e.w + (st || 1)) * 10) / 10; if (dd === "w-") e.w = Math.max(0, Math.round((e.w - (st || 1)) * 10) / 10);
+      if (dd === "r+") e.r++; if (dd === "r-") e.r = Math.max(1, e.r - 1);
+      ex.querySelector('[data-v="w"]').textContent = e.w > 0 ? n1(e.w) : "—"; ex.querySelector('[data-v="r"]').textContent = e.r;
+      tg?.HapticFeedback?.selectionChanged(); return;
+    }
+    const go = ev.target.closest("[data-go]"), undo = ev.target.closest("[data-undo]");
+    if (!go && !undo) return;
+    (go || undo).disabled = true;
+    try {
+      const res = await post(go ? { action: "log_set", exercise_id: id, weight_kg: e.w, reps: e.r } : { action: "undo_set", exercise_id: id });
+      if (!res.ok) throw new Error(res.error || "ошибка");
+      SETS = res.sets_today;
+      ex.outerHTML = exRow(it, true);
+      const fresh = box.querySelector(`[data-ex="${id}"]`);
+      const nDone = SETS.filter((s) => s.exercise_id === id).length;
+      if (go) {
+        tg?.HapticFeedback?.notificationOccurred("success");
+        if (nDone < it.n_sets) { fresh.classList.add("open"); startRest(it.rep_max <= 8 ? 120 : 90, `Дальше: подход ${nDone + 1} — ${esc(it.exercise)}`); }
+        else { const next = fresh.nextElementSibling; if (next?.classList.contains("wo-ex")) next.classList.add("open"); startRest(120, next?.classList.contains("wo-ex") ? `Дальше: ${esc(items[+next.dataset.ex].exercise)}` : "Последнее упражнение сделано — красава 💪"); }
+      } else fresh.classList.add("open");
+    } catch (err) { tg?.showAlert?.("Не записалось: " + err.message) ?? alert("Не записалось: " + err.message); (go || undo).disabled = false; }
+  };
+}
+async function post(body) {
+  if (new URLSearchParams(location.search).get("mock")) { // локальная проверка без сервера
+    if (body.action === "log_set") SETS.push({ exercise_id: body.exercise_id, set_no: SETS.length + 1, weight_kg: body.weight_kg, reps: body.reps });
+    if (body.action === "undo_set") { const i = SETS.map((s) => s.exercise_id).lastIndexOf(body.exercise_id); if (i >= 0) SETS.splice(i, 1); }
+    return { ok: true, sets_today: [...SETS] };
+  }
+  const r = await fetch(API, { method: "POST", headers: { "x-tg-init-data": tg.initData, "content-type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+let restTimer = null;
+function startRest(sec, text) {
+  clearInterval(restTimer);
+  const box = $("#rest"), t = $("#restT");
+  $("#restTx").innerHTML = text; box.hidden = false;
+  const end = Date.now() + sec * 1000;
+  const tick = () => {
+    const left = Math.max(0, Math.round((end - Date.now()) / 1000));
+    t.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    if (left === 0) { clearInterval(restTimer); tg?.HapticFeedback?.notificationOccurred("warning"); t.textContent = "Погнали"; setTimeout(() => box.hidden = true, 4000); }
+  };
+  tick(); restTimer = setInterval(tick, 500);
+  $("#restSkip").onclick = () => { clearInterval(restTimer); box.hidden = true; };
 }
 
 load().then(render).catch((e) => { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; });
