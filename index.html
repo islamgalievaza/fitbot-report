@@ -1,0 +1,424 @@
+<!doctype html>
+<!-- Мини-приложение «Отчёт» бота-тренера. v2.1 (24.11.2026): картинки персонажа из закрытого хранилища; игра — персонаж, уровни, задания, ачивки, прогноз, календарь, карта мышц, фото до/после. -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Качалка Азамата</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Тёмная «игровая» тема всегда — арт персонажа на тёмном фоне */
+  :root {
+    color-scheme: dark;
+    --bg: #110f0d; --card: #1c1916; --card-2: #25211d; --line: rgba(255,255,255,.08);
+    --text: #f4efe8; --muted: #a89f94; --dim: #6e665d;
+    --fire: #ff7a1a; --gold: #ffc23d; --good: #3ddc84; --bad: #ff5a5a;
+    --series-1: #3987e5; --series-3: #1fbf85; --series-2: #ff7a1a;
+    --display: "Russo One", "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 "Inter", -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { padding: 10px 16px calc(28px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  .num { font-variant-numeric: tabular-nums; }
+  h3 { font: 15px var(--display); letter-spacing: .3px; margin: 0 0 12px; text-transform: uppercase; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; margin-bottom: 12px; }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  /* Герой */
+  .hero { position: relative; border-radius: 24px; overflow: hidden; margin-bottom: 12px; background: radial-gradient(120% 80% at 50% 30%, #3a2412 0%, #17120e 55%, #110f0d 100%); border: 1px solid var(--line); }
+  .hero-top { position: absolute; inset: 12px 12px auto 12px; display: flex; justify-content: space-between; align-items: flex-start; z-index: 2; }
+  .badge { font: 13px var(--display); background: rgba(0,0,0,.55); backdrop-filter: blur(6px); padding: 6px 10px; border-radius: 12px; border: 1px solid var(--line); }
+  .badge b { color: var(--gold); }
+  .flame { text-align: center; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); border: 1px solid var(--line); border-radius: 16px; padding: 6px 12px; }
+  .flame .f { font-size: 26px; line-height: 1; display: inline-block; animation: flick 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+  .flame .c { font: 22px var(--display); }
+  .flame .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  @keyframes flick { 0%,100% { transform: scale(1) rotate(-3deg); } 50% { transform: scale(1.12) rotate(3deg); } }
+  .char { display: block; width: 78%; max-width: 320px; margin: 18px auto 0; animation: breathe 3.2s ease-in-out infinite; transform-origin: 50% 100%; filter: drop-shadow(0 12px 24px rgba(0,0,0,.6)); }
+  @keyframes breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.012); } }
+  .hero-bottom { position: relative; padding: 0 16px 16px; margin-top: -48px; z-index: 2; background: linear-gradient(transparent, rgba(17,15,13,.95) 40%); padding-top: 40px; }
+  .stage-name { font: 24px var(--display); line-height: 1.1; }
+  .xp { height: 12px; border-radius: 6px; background: rgba(255,255,255,.1); overflow: hidden; margin: 10px 0 6px; position: relative; }
+  .xp > i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(90deg, var(--fire), var(--gold)); box-shadow: 0 0 12px rgba(255,122,26,.6); }
+  .xp-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .stages { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 12px; }
+  .stages button { border: 1px solid var(--line); background: var(--card-2); border-radius: 12px; padding: 0; overflow: hidden; aspect-ratio: 2/3; position: relative; cursor: pointer; }
+  .stages img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; }
+  .stages button.locked img { filter: grayscale(1) brightness(.25); }
+  .stages button.locked::after { content: "🔒"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; }
+  .stages button.cur { border: 2px solid var(--gold); box-shadow: 0 0 10px rgba(255,194,61,.5); }
+  .stages button span { position: absolute; left: 3px; bottom: 2px; font: 10px var(--display); color: var(--text); text-shadow: 0 1px 2px #000; }
+
+  /* Вкладки */
+  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 4px; margin-bottom: 12px; position: sticky; top: 6px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); font: 600 13px "Inter", system-ui; padding: 9px 0; border-radius: 12px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--fire); color: #1a0d02; }
+  section[hidden] { display: none; }
+
+  /* Задания */
+  .quest { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .quest:first-of-type { border-top: 0; }
+  .quest .ic { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--card-2); font-size: 18px; flex: none; }
+  .quest .t { flex: 1; font-weight: 600; }
+  .quest .t small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .quest .st { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; flex: none; border: 2px solid var(--dim); color: transparent; }
+  .quest.done .st { background: var(--good); border-color: var(--good); color: #062; }
+  .quest.done .t { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--dim); }
+  .quest.fail .st { background: var(--bad); border-color: var(--bad); color: #300; }
+  .qhead { display: flex; justify-content: space-between; align-items: baseline; }
+  .qhead b { font: 18px var(--display); color: var(--gold); }
+
+  /* Кольца */
+  .rings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ring { text-align: center; }
+  .ring svg { width: 100%; max-width: 140px; }
+  .ring .v { font: 20px var(--display); }
+  .bar { height: 10px; border-radius: 5px; background: var(--card-2); overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; border-radius: 5px; }
+  .lbl { display: flex; justify-content: space-between; font-size: 14px; margin-top: 12px; }
+
+  /* Ачивки */
+  .achs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .ach { background: var(--card-2); border: 1px solid var(--line); border-radius: 16px; padding: 10px 8px; text-align: center; }
+  .ach .e { font-size: 28px; line-height: 1.2; }
+  .ach .n { font-size: 12px; font-weight: 700; margin-top: 4px; line-height: 1.2; }
+  .ach .p { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); margin-top: 6px; overflow: hidden; }
+  .ach .p i { display: block; height: 100%; background: var(--fire); }
+  .ach.locked .e { filter: grayscale(1); opacity: .35; }
+  .ach.locked .n { color: var(--muted); }
+  .ach.done { border-color: rgba(255,194,61,.5); background: linear-gradient(160deg, #3b2a10, var(--card-2)); }
+
+  /* Календарь */
+  .cal { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; grid-template-rows: repeat(7, auto); gap: 4px; }
+  .cal i { aspect-ratio: 1; border-radius: 4px; background: var(--card-2); position: relative; }
+  .cal i.logged { background: #4a3a26; } .cal i.good { background: #b8651c; } .cal i.perfect { background: var(--fire); box-shadow: 0 0 6px rgba(255,122,26,.5); }
+  .cal i.today { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .cal i.trained::after { content: ""; position: absolute; inset: 35%; border-radius: 50%; background: #fff; opacity: .85; }
+  .cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 10px; }
+  .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+
+  /* Прогноз */
+  .fc { display: flex; align-items: center; gap: 14px; }
+  .fc .big { font: 28px var(--display); color: var(--gold); }
+
+  /* Графики, списки */
+  .chart { position: relative; height: 220px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .legend i.dash { background: repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px); }
+  .legend i.dot { width: 8px; height: 8px; border-radius: 50%; }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  ul.list li:first-child { border-top: 0; }
+  ul.list li span:last-child { color: var(--muted); white-space: nowrap; }
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tile { background: var(--card-2); border-radius: 14px; padding: 10px 12px; }
+  .tile .v { font: 22px var(--display); }
+  .up { color: var(--bad); } .down { color: var(--good); } .flat { color: var(--muted); }
+  select { width: 100%; font: inherit; color: var(--text); background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+  .err { text-align: center; padding: 60px 16px; color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  td, th { padding: 4px 2px; text-align: right; border-top: 1px solid var(--line); } td:first-child, th:first-child { text-align: left; }
+
+  /* Карта мышц */
+  .bodymap { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .bodymap svg { width: 100%; }
+  .bodymap .cap { text-align: center; font-size: 12px; color: var(--muted); }
+  .m0 { fill: #2c2723; } .m1 { fill: #6b3d17; } .m2 { fill: #c0621c; } .m3 { fill: #ff8a2a; }
+  .bodymap .base { fill: #1f1b18; stroke: #3a332d; stroke-width: 1.5; }
+  .mlist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .mlist span { font-size: 12px; padding: 4px 8px; border-radius: 10px; background: var(--card-2); }
+  .mlist span.zero { color: var(--bad); }
+
+  /* Фото до/после */
+  .ba { position: relative; border-radius: 16px; overflow: hidden; aspect-ratio: 3/4; background: var(--card-2); user-select: none; touch-action: none; }
+  .ba img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .ba .after { clip-path: inset(0 0 0 50%); }
+  .ba .handle { position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; background: var(--gold); transform: translateX(-50%); }
+  .ba .handle::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 34px; height: 34px; border-radius: 50%; background: var(--gold); color: #000; display: grid; place-items: center; font-weight: 700; }
+  .ba .tag { position: absolute; top: 8px; font: 12px var(--display); background: rgba(0,0,0,.6); padding: 3px 8px; border-radius: 8px; }
+
+  /* Просмотр формы */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: grid; place-items: center; z-index: 20; padding: 24px; }
+  .modal[hidden] { display: none; }
+  .modal img { max-width: 100%; max-height: 70vh; border-radius: 16px; }
+  .modal .cap { text-align: center; margin-top: 10px; font: 18px var(--display); }
+</style>
+</head>
+<body>
+<main id="app"><div class="err">Загружаю качалку…</div></main>
+<div class="modal" id="modal" hidden><div><img id="modalImg" alt=""><div class="cap" id="modalCap"></div><div class="sub" style="text-align:center" id="modalSub"></div></div></div>
+<script>
+const API = "https://pfdiblftrpeqjabuppcw.supabase.co/functions/v1/app";
+const tg = window.Telegram?.WebApp;
+tg?.ready(); tg?.expand(); tg?.setHeaderColor?.("#110f0d"); tg?.setBackgroundColor?.("#110f0d");
+
+const STAGES = ["Диванный босс", "Первые шаги", "Новичок качалки", "В форме", "Атлет", "Финальная форма"];
+const STAGE_AT = [89.4, 87, 85, 83, 81, 80];
+const $ = (s) => document.querySelector(s);
+const fmtD = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+const ts = (iso) => Date.parse(iso + "T12:00:00");
+const n0 = (x) => Math.round(+x || 0).toLocaleString("ru-RU");
+const n1 = (x) => (Math.round((+x || 0) * 10) / 10).toLocaleString("ru-RU");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
+const haptic = (t = "light") => tg?.HapticFeedback?.impactOccurred(t);
+let HERO = [];
+const heroSrc = (n) => HERO[n - 1] || `hero/stage${n}.webp`; // в проде — временные ссылки из закрытого хранилища
+
+async function load() {
+  const mock = new URLSearchParams(location.search).get("mock");
+  if (mock) return (await fetch(mock)).json();
+  if (!tg?.initData) throw new Error("Открой отчёт из бота — кнопка «📊 Отчёт».");
+  const r = await fetch(API, { headers: { "x-tg-init-data": tg.initData } });
+  if (r.status === 403) throw new Error("Это качалка Азамата. Тебе сюда нельзя 🙂");
+  if (!r.ok) throw new Error("Сервер не ответил, попробуй ещё раз.");
+  return r.json();
+}
+
+function ring(val, target, color, label, unit) {
+  const p = target ? Math.min(1, val / target) : 0, over = target && val > target;
+  const C = 2 * Math.PI * 42;
+  return `<div class="ring" role="img" aria-label="${label}: ${n0(val)} из ${n0(target)} ${unit}">
+    <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="var(--card-2)" stroke-width="10"/>
+    <circle cx="50" cy="50" r="42" fill="none" stroke="${over ? "var(--bad)" : color}" stroke-width="10" stroke-linecap="round"
+      stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - p)}" transform="rotate(-90 50 50)"/></svg>
+    <div class="v num" style="margin-top:-78px;margin-bottom:46px">${n0(val)}</div>
+    <div class="sub">${label}<br>из ${n0(target)} ${unit}${over ? ` · <span class="up">+${n0(val - target)}</span>` : ""}</div></div>`;
+}
+
+function render(d) {
+  HERO = d.hero || [];
+  const t = d.targets || {}, g = d.goal, st = d.stage;
+  const today = (d.days || []).find((r) => r.date === d.today) || { kcal: 0, protein: 0, fat: 0 };
+  const qDone = d.quests.filter((q) => q.done).length;
+  const nextName = STAGES[st.n] ;
+  const b = d.body || {};
+  const last2 = (k) => { const a = b[k] || []; return [a[a.length - 1]?.value, a.length > 1 ? a[a.length - 2].value : null]; };
+  const [bf, bfp] = last2("body_fat"), [mk, mkp] = last2("muscle_kg"), [vf, vfp] = last2("visceral_fat"), [fk, fkp] = last2("fat_kg");
+  const achDone = d.achievements.filter((a) => a.done).length;
+
+  $("#app").innerHTML = `
+  <div class="hero">
+    <div class="hero-top">
+      <div class="badge">УР. <b>${st.n}</b>/6</div>
+      <div class="flame"><span class="f">🔥</span> <span class="c num">${d.streak}</span><div class="l">${plural(d.streak, "день", "дня", "дней")} подряд</div></div>
+    </div>
+    <img class="char" src="${heroSrc(st.n)}" alt="Персонаж: форма ${st.n} — ${esc(st.name)}">
+    <div class="hero-bottom">
+      <div class="sub">Тренд веса <b class="num" style="color:var(--text)">${n1(d.trend_now)} кг</b> · сброшено <b class="num" style="color:var(--good)">${n1(d.lost)} кг</b></div>
+      <div class="stage-name">${esc(st.name)}</div>
+      <div class="xp" role="img" aria-label="До следующей формы ${Math.round(st.progress * 100)}%"><i style="width:${Math.max(3, st.progress * 100)}%"></i></div>
+      <div class="xp-row">${st.n < 6 ? `<span>до «${esc(nextName)}» ещё <b class="num" style="color:var(--text)">${n1(st.to_next)} кг</b></span><span>при ${n1(st.next_at)} кг</span>` : `<span>Цель взята. Ты машина 🏆</span>`}</div>
+      <div class="stages">${STAGES.map((nm, i) => `<button class="${i + 1 > st.n ? "locked" : ""} ${i + 1 === st.n ? "cur" : ""}" data-stage="${i + 1}" aria-label="Форма ${i + 1}: ${nm}"><img src="${heroSrc(i + 1)}" alt="" loading="lazy"><span>${i + 1}</span></button>`).join("")}</div>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist">${[["main", "Главная"], ["weight", "Вес"], ["food", "Еда"], ["gym", "Зал"], ["photo", "Фото"]].map(([k, l], i) => `<button role="tab" data-tab="${k}" aria-selected="${i === 0}">${l}</button>`).join("")}</nav>
+
+  <section data-panel="main">
+    <div class="card">
+      <div class="qhead"><h3>Задания на сегодня</h3><b class="num">${qDone}/${d.quests.length}</b></div>
+      ${d.quests.map((q) => `<div class="quest ${q.done ? "done" : q.fail ? "fail" : ""}"><div class="ic">${q.emoji}</div>
+        <div class="t">${esc(q.title)}${q.target ? `<small class="num">${n0(q.value)} / ${n0(q.target)}</small>` : ""}</div>
+        <div class="st">${q.done ? "✓" : q.fail ? "✕" : ""}</div></div>`).join("")}
+    </div>
+    <div class="card"><h3>Еда сегодня</h3>
+      <div class="rings">${ring(today.kcal, today.kcal_target, "var(--fire)", "ккал", "")}${ring(today.protein, t.protein_g, "var(--series-3)", "белок", "г")}</div>
+      <div class="lbl"><span>Жиры</span><b class="num">${n0(today.fat)} / ${n0(t.fat_max_g)} г макс</b></div>
+      <div class="bar"><i style="width:${Math.min(100, today.fat / (t.fat_max_g || 70) * 100)}%;background:${today.fat > t.fat_max_g ? "var(--bad)" : "var(--gold)"}"></i></div>
+      ${(d.meals_today || []).length ? `<ul class="list" style="margin-top:12px">${d.meals_today.map((m) => `<li><span>${esc(m.title)}</span><span class="num">${n0(m.kcal)} ккал</span></li>`).join("")}</ul>` : `<div class="empty" style="margin-top:10px">Сегодня ещё ничего не записано.</div>`}
+    </div>
+    <div class="card"><h3>Прогноз</h3>
+      ${d.forecast.date ? `<div class="fc"><div class="big num">${fmtD(d.forecast.date)}</div><div><b>${n1(g.target)} кг</b> при темпе ${n1(d.forecast.kg_per_week)} кг/нед<br><span class="sub">${esc(d.forecast.note)}</span></div></div>`
+        : `<div class="sub">${esc(d.forecast.note)}</div>${d.forecast.kg_per_week != null ? `<div class="sub">Темп сейчас: ${n1(d.forecast.kg_per_week)} кг/нед</div>` : ""}`}
+      <div class="sub" style="margin-top:8px">Цель: ${n1(g.target)} кг к ${fmtD(g.target_date)} · осталось ${Math.max(0, Math.round((Date.parse(g.target_date) - Date.parse(d.today)) / 6048e5))} нед.</div>
+    </div>
+    <div class="card"><div class="qhead"><h3>Ачивки</h3><b class="num">${achDone}/${d.achievements.length}</b></div>
+      <div class="achs">${d.achievements.slice().sort((a, b) => b.done - a.done).map((a) => `<div class="ach ${a.done ? "done" : "locked"}" title="${esc(a.desc)}"><div class="e">${a.emoji}</div><div class="n">${esc(a.title)}</div>
+        <div class="sub" style="font-size:11px;margin-top:2px">${esc(a.desc)}</div>${!a.done && a.progress ? `<div class="p"><i style="width:${a.progress[0] / a.progress[1] * 100}%"></i></div>` : ""}</div>`).join("")}</div>
+    </div>
+    <div class="card"><h3>Последние 12 недель</h3>
+      <div class="cal" role="img" aria-label="Календарь дисциплины за 12 недель">${calendar(d)}</div>
+      <div class="cal-legend"><span><i style="background:var(--fire)"></i>всё по плану</span><span><i style="background:#b8651c"></i>почти</span><span><i style="background:#4a3a26"></i>записал</span><span><i style="background:var(--card-2)"></i>пусто</span><span>• зал</span></div>
+      <div class="sub" style="margin-top:6px">Рекорд серии: <b class="num">${d.best_streak}</b> ${plural(d.best_streak, "день", "дня", "дней")}</div>
+    </div>
+  </section>
+
+  <section data-panel="weight" hidden>
+    <div class="card"><h3>Вес и тренд</h3><div class="chart"><canvas id="cWeight" aria-label="График веса"></canvas></div>
+      <div class="legend"><span><i class="dot" style="background:var(--muted)"></i>взвешивания</span><span><i style="background:var(--series-1)"></i>тренд</span><span><i class="dash"></i>цель ${n1(g.target)} кг</span></div>
+      <details><summary>Таблица</summary><table><tr><th>Дата</th><th>Вес</th><th>Тренд</th></tr>${(d.trend || []).slice().reverse().map((x) => `<tr><td>${fmtD(x.date)}</td><td>${n1(x.weight)}</td><td>${n1(x.trend)}</td></tr>`).join("")}</table></details>
+    </div>
+    <div class="card"><h3>Состав тела</h3><div class="sub" style="margin:-6px 0 10px">весы Xiaomi, погрешность ±2–3%</div>
+      <div class="tiles">${tile("Жир", bf, bfp, "%")}${tile("Масса жира", fk, fkp, "кг")}${tile("Мышцы", mk, mkp, "кг", false)}${tile("Висцеральный", vf, vfp, "", true, vf >= 13 ? " · высокий" : "")}</div>
+    </div>
+  </section>
+
+  <section data-panel="food" hidden>
+    <div class="card"><h3>Калории · 14 дней</h3><div class="chart"><canvas id="cKcal" aria-label="Калории по дням"></canvas></div>
+      <div class="legend"><span><i style="background:var(--fire)"></i>съедено</span><span><i class="dash"></i>норма</span></div>${avgLine(d.days, "kcal", "kcal_target", "ккал")}</div>
+    <div class="card"><h3>Белок · 14 дней</h3><div class="chart"><canvas id="cProt" aria-label="Белок по дням"></canvas></div>
+      <div class="legend"><span><i style="background:var(--series-3)"></i>белок, г</span><span><i class="dash"></i>норма ${t.protein_g || ""} г</span></div>${avgLine(d.days, "protein", "protein_target", "г")}</div>
+  </section>
+
+  <section data-panel="gym" hidden>
+    <div class="card"><h3>Карта мышц · 7 дней</h3>${bodyMap(d.muscles7 || {})}</div>
+    <div class="card"><h3>Сила по упражнению</h3>
+      ${(d.exercises || []).length ? `<select id="exSel" aria-label="Упражнение">${d.exercises.map((e, i) => `<option value="${i}">${esc(e.name)}</option>`).join("")}</select>
+      <div class="chart" style="height:180px"><canvas id="cEx" aria-label="Прогресс упражнения"></canvas></div><div class="sub" id="exNote" style="margin-top:6px"></div>` : `<div class="empty">Запиши тренировку — тут появится рост силы.</div>`}
+    </div>
+    <div class="card"><h3>Тренировки</h3>
+      ${(d.sessions || []).length ? `<ul class="list">${d.sessions.slice().reverse().map((s) => `<li><span>${fmtD(s.date)} · ${s.exercises.length} упр.</span><span class="num">${s.sets} подх. · ${n0(s.tonnage)} кг</span></li>`).join("")}</ul>` : `<div class="empty">Пока пусто.</div>`}
+      ${(d.cardio || []).length ? `<div class="sub" style="margin-top:8px">Кардио за 30 дней: <b class="num">${n0(d.cardio.reduce((s, c) => s + +c.minutes, 0))}</b> мин</div>` : ""}
+    </div>
+  </section>
+
+  <section data-panel="photo" hidden>
+    <div class="card"><h3>До / после</h3>${photos(d.photos || [])}</div>
+  </section>`;
+
+  const panels = { weight: () => drawWeight(d), food: () => drawFood(d.days), gym: () => drawEx(d, 0), photo: () => initBA() };
+  document.querySelectorAll(".tabs button").forEach((btn) => btn.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === btn));
+    document.querySelectorAll("section[data-panel]").forEach((s) => s.hidden = s.dataset.panel !== btn.dataset.tab);
+    tg?.HapticFeedback?.selectionChanged();
+    panels[btn.dataset.tab]?.();
+  });
+  $("#exSel")?.addEventListener("change", (e) => drawEx(d, +e.target.value));
+  document.querySelectorAll(".stages button").forEach((btn) => btn.onclick = () => {
+    const n = +btn.dataset.stage, locked = n > st.n;
+    haptic(locked ? "light" : "medium");
+    $("#modalImg").src = heroSrc(n);
+    $("#modalImg").style.filter = locked ? "grayscale(1) brightness(.35)" : "";
+    $("#modalCap").textContent = `${n}. ${STAGES[n - 1]}`;
+    $("#modalSub").textContent = locked ? `🔒 Откроется при тренде ${n1(STAGE_AT[n - 1])} кг` : n === st.n ? "Это ты сейчас" : "Пройдено ✓";
+    $("#modal").hidden = false;
+  });
+  $("#modal").onclick = () => $("#modal").hidden = true;
+
+  // Новый уровень с прошлого захода — вспышка и вибрация
+  try {
+    const seen = +localStorage.getItem("stage_seen") || 1;
+    if (st.n > seen) { tg?.HapticFeedback?.notificationOccurred("success"); $(".char").animate([{ filter: "brightness(3)" }, { filter: "brightness(1)" }], 1200); }
+    localStorage.setItem("stage_seen", st.n);
+  } catch {}
+}
+
+function calendar(d) {
+  const cells = d.calendar.slice(-84);
+  const pad = (new Date(cells[0].date).getDay() + 6) % 7; // понедельник сверху
+  return Array(pad).fill("<i style='visibility:hidden'></i>").join("") +
+    cells.map((c) => `<i class="${c.status} ${c.trained ? "trained" : ""} ${c.date === d.today ? "today" : ""}" title="${fmtD(c.date)}"></i>`).join("");
+}
+function tile(label, v, prev, unit, lowerIsGood = true, extra = "") {
+  if (v == null) return `<div class="tile"><div class="sub">${label}</div><div class="v">—</div></div>`;
+  let dl = `<span class="flat">первый замер</span>`;
+  if (prev != null) { const dd = v - prev; dl = Math.abs(dd) < 0.05 ? `<span class="flat">без изменений</span>` : `<span class="${(lowerIsGood ? dd < 0 : dd > 0) ? "down" : "up"}">${dd > 0 ? "▲" : "▼"} ${n1(Math.abs(dd))} ${unit}</span>`; }
+  return `<div class="tile"><div class="sub">${label}${extra}</div><div class="v num">${n1(v)}${unit ? ` <span class="sub">${unit}</span>` : ""}</div><div style="font-size:12px">${dl}</div></div>`;
+}
+function avgLine(days, k, tk, unit) {
+  const logged = days.filter((r) => r.meals > 0).slice(-7);
+  if (!logged.length) return `<div class="sub" style="margin-top:6px">Нет записей еды за неделю.</div>`;
+  const avg = logged.reduce((s, r) => s + r[k], 0) / logged.length, tgt = logged.reduce((s, r) => s + (r[tk] || 0), 0) / logged.length;
+  return `<div class="sub" style="margin-top:6px">В среднем за ${logged.length} дн.: <b class="num" style="color:var(--text)">${n0(avg)} ${unit}</b> при норме ${n0(tgt)}</div>`;
+}
+
+// Упрощённая фигура спереди и сзади; цвет — сколько подходов на группу за 7 дней
+const MUSCLE_RU = { chest: "грудь", shoulders: "плечи", rear_delts: "задняя дельта", biceps: "бицепс", triceps: "трицепс", forearms: "предплечья", abs: "пресс", lats: "широчайшие", traps: "трапеции", lower_back: "поясница", glutes: "ягодицы", quads: "квадрицепс", hamstrings: "бицепс бедра", calves: "икры" };
+function bodyMap(m) {
+  const c = (k) => { const v = m[k] || 0; return v === 0 ? "m0" : v < 6 ? "m1" : v < 12 ? "m2" : "m3"; };
+  const t = (k) => `<title>${MUSCLE_RU[k]}: ${m[k] || 0} подх.</title>`;
+  const sil = `<circle class="base" cx="60" cy="18" r="13"/><rect class="base" x="34" y="34" width="52" height="78" rx="18"/><rect class="base" x="14" y="40" width="16" height="70" rx="8"/><rect class="base" x="90" y="40" width="16" height="70" rx="8"/><rect class="base" x="38" y="108" width="20" height="96" rx="9"/><rect class="base" x="62" y="108" width="20" height="96" rx="9"/>`;
+  const front = `<svg viewBox="0 0 120 210">${sil}
+    <ellipse class="${c("shoulders")}" cx="30" cy="44" rx="11" ry="9">${t("shoulders")}</ellipse><ellipse class="${c("shoulders")}" cx="90" cy="44" rx="11" ry="9">${t("shoulders")}</ellipse>
+    <rect class="${c("chest")}" x="38" y="40" width="21" height="22" rx="7">${t("chest")}</rect><rect class="${c("chest")}" x="61" y="40" width="21" height="22" rx="7">${t("chest")}</rect>
+    <rect class="${c("biceps")}" x="16" y="56" width="12" height="24" rx="6">${t("biceps")}</rect><rect class="${c("biceps")}" x="92" y="56" width="12" height="24" rx="6">${t("biceps")}</rect>
+    <rect class="${c("forearms")}" x="16" y="84" width="12" height="24" rx="6">${t("forearms")}</rect><rect class="${c("forearms")}" x="92" y="84" width="12" height="24" rx="6">${t("forearms")}</rect>
+    <rect class="${c("abs")}" x="47" y="66" width="26" height="42" rx="7">${t("abs")}</rect>
+    <rect class="${c("quads")}" x="40" y="114" width="16" height="50" rx="8">${t("quads")}</rect><rect class="${c("quads")}" x="64" y="114" width="16" height="50" rx="8">${t("quads")}</rect>
+    <rect class="${c("calves")}" x="42" y="172" width="12" height="26" rx="6">${t("calves")}</rect><rect class="${c("calves")}" x="66" y="172" width="12" height="26" rx="6">${t("calves")}</rect></svg>`;
+  const back = `<svg viewBox="0 0 120 210">${sil}
+    <path class="${c("traps")}" d="M44 36 L60 30 L76 36 L70 48 L50 48 Z">${t("traps")}</path>
+    <ellipse class="${c("rear_delts")}" cx="30" cy="44" rx="11" ry="9">${t("rear_delts")}</ellipse><ellipse class="${c("rear_delts")}" cx="90" cy="44" rx="11" ry="9">${t("rear_delts")}</ellipse>
+    <path class="${c("lats")}" d="M38 50 L58 52 L58 88 L44 82 Z">${t("lats")}</path><path class="${c("lats")}" d="M82 50 L62 52 L62 88 L76 82 Z">${t("lats")}</path>
+    <rect class="${c("triceps")}" x="16" y="56" width="12" height="26" rx="6">${t("triceps")}</rect><rect class="${c("triceps")}" x="92" y="56" width="12" height="26" rx="6">${t("triceps")}</rect>
+    <rect class="${c("lower_back")}" x="48" y="90" width="24" height="16" rx="6">${t("lower_back")}</rect>
+    <rect class="${c("glutes")}" x="39" y="108" width="20" height="20" rx="9">${t("glutes")}</rect><rect class="${c("glutes")}" x="61" y="108" width="20" height="20" rx="9">${t("glutes")}</rect>
+    <rect class="${c("hamstrings")}" x="40" y="132" width="16" height="34" rx="8">${t("hamstrings")}</rect><rect class="${c("hamstrings")}" x="64" y="132" width="16" height="34" rx="8">${t("hamstrings")}</rect>
+    <rect class="${c("calves")}" x="42" y="172" width="12" height="26" rx="6">${t("calves")}</rect><rect class="${c("calves")}" x="66" y="172" width="12" height="26" rx="6">${t("calves")}</rect></svg>`;
+  const keys = ["chest", "shoulders", "rear_delts", "biceps", "triceps", "abs", "lats", "traps", "lower_back", "glutes", "quads", "hamstrings"];
+  return `<div class="bodymap"><div>${front}<div class="cap">спереди</div></div><div>${back}<div class="cap">сзади</div></div></div>
+    <div class="cal-legend"><span><i class="m0" style="background:#2c2723"></i>0</span><span><i style="background:#6b3d17"></i>1–5 подх.</span><span><i style="background:#c0621c"></i>6–11</span><span><i style="background:#ff8a2a"></i>12+</span></div>
+    <div class="mlist">${keys.map((k) => `<span class="${m[k] ? "" : "zero"}">${MUSCLE_RU[k]} <b class="num">${m[k] || 0}</b></span>`).join("")}</div>
+    ${keys.some((k) => !m[k]) ? `<div class="sub" style="margin-top:8px">Красным — что не качал неделю. Ноги, бля, тоже мышцы.</div>` : ""}`;
+}
+
+function photos(list) {
+  if (!list.length) return `<div class="empty">Пришли боту фото в зеркало — в полный рост или торс. Он сохранит его как «до» (видно только тебе). Через 2 недели — ещё одно, в том же месте и свете, и тут появится сравнение.</div>`;
+  const first = list[0], last = list[list.length - 1];
+  if (list.length === 1) return `<div class="ba"><img src="${first.url}" alt="Фото ${fmtD(first.date)}"><span class="tag" style="left:8px">ДО · ${fmtD(first.date)}</span></div><div class="sub" style="margin-top:8px">Это точка «до». Следующее фото — через 2 недели.</div>`;
+  return `<div class="ba" id="ba"><img src="${first.url}" alt="До ${fmtD(first.date)}"><img class="after" src="${last.url}" alt="После ${fmtD(last.date)}"><div class="handle"></div>
+    <span class="tag" style="left:8px">ДО · ${fmtD(first.date)}</span><span class="tag" style="right:8px">${fmtD(last.date)}</span></div>
+    <div class="sub" style="margin-top:8px">Тяни ползунок. Всего фото: ${list.length}.</div>`;
+}
+function initBA() {
+  const ba = $("#ba"); if (!ba || ba.dataset.on) return; ba.dataset.on = 1;
+  const move = (x) => { const r = ba.getBoundingClientRect(); const p = Math.max(0, Math.min(100, (x - r.left) / r.width * 100));
+    ba.querySelector(".after").style.clipPath = `inset(0 0 0 ${p}%)`; ba.querySelector(".handle").style.left = p + "%"; };
+  ba.addEventListener("pointerdown", (e) => { ba.setPointerCapture(e.pointerId); move(e.clientX); });
+  ba.addEventListener("pointermove", (e) => { if (e.buttons) move(e.clientX); });
+}
+
+let charts = {};
+function chart(id, cfg) {
+  charts[id]?.destroy();
+  Chart.defaults.color = "#a89f94"; Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+  cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false } }, cfg.options || {});
+  const pl = cfg.options.plugins || {};
+  cfg.options.plugins = { ...pl, legend: { display: false }, tooltip: { padding: 10, cornerRadius: 10, boxPadding: 4, backgroundColor: "#000c", ...(pl.tooltip || {}) } };
+  for (const ax of Object.values(cfg.options.scales || {})) { ax.grid = Object.assign({ color: "rgba(255,255,255,.07)", drawTicks: false }, ax.grid || {}); ax.border = { display: false }; ax.ticks = Object.assign({ padding: 6 }, ax.ticks || {}); }
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+function drawWeight(d) {
+  const tr = d.trend || [], g = d.goal;
+  const xs = tr.map((x) => ts(x.date));
+  const minX = Math.min(...xs, ts(g.start_date)), maxX = Math.max(...xs, ts(d.today)) + 3 * 864e5;
+  chart("cWeight", { type: "line", data: { datasets: [
+      { label: "Взвешивание", data: tr.map((x) => ({ x: ts(x.date), y: +x.weight })), showLine: false, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: "#a89f94", pointBorderColor: "#1c1916", pointBorderWidth: 2 },
+      { label: "Тренд", data: tr.flatMap((x, i) => { const p = { x: ts(x.date), y: +x.trend }; return i && ts(x.date) - ts(tr[i - 1].date) > 14 * 864e5 ? [{ x: ts(x.date) - 1, y: null }, p] : [p]; }), spanGaps: false, borderColor: "#3987e5", borderWidth: 2, pointRadius: 0, tension: 0.25 },
+      { label: "Цель", data: [{ x: minX, y: g.target }, { x: maxX, y: g.target }], borderColor: "#a89f94", borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0 } ] },
+    options: { scales: { x: { type: "linear", min: minX, max: maxX, ticks: { maxTicksLimit: 5, callback: (v) => fmtD(new Date(v).toISOString().slice(0, 10)) } },
+      y: { suggestedMin: g.target - 1, suggestedMax: g.start + 1, ticks: { callback: (v) => v + " кг" } } },
+      plugins: { tooltip: { callbacks: { title: (it) => fmtD(new Date(it[0].parsed.x).toISOString().slice(0, 10)), label: (c) => `${c.dataset.label}: ${n1(c.parsed.y)} кг` } } } } });
+}
+function drawFood(days) {
+  const last = days.slice(-14), labels = last.map((r) => fmtD(r.date));
+  const bar = { borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "bottom", maxBarThickness: 18, categoryPercentage: 0.8, barPercentage: 0.9 };
+  const line = (k) => ({ type: "line", label: "Норма", data: last.map((r) => r[k]), borderColor: "#a89f94", borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, stepped: "middle" });
+  const opts = (u) => ({ scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 7 } }, y: { beginAtZero: true, ticks: { maxTicksLimit: 5 } } },
+    plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? "нет записей" : n0(c.parsed.y) + " " + u}` } } } });
+  chart("cKcal", { type: "bar", data: { labels, datasets: [{ label: "Съедено", data: last.map((r) => r.meals ? Math.round(r.kcal) : null), backgroundColor: last.map((r) => r.kcal_target && r.kcal > r.kcal_target ? "#ff5a5a" : "#ff7a1a"), ...bar }, line("kcal_target")] }, options: opts("ккал") });
+  chart("cProt", { type: "bar", data: { labels, datasets: [{ label: "Белок", data: last.map((r) => r.meals ? Math.round(r.protein) : null), backgroundColor: "#1fbf85", ...bar }, line("protein_target")] }, options: opts("г") });
+}
+function drawEx(d, i) {
+  const e = (d.exercises || [])[i]; if (!e) return;
+  const pts = e.points, unit = e.bodyweight ? "повт." : "кг";
+  chart("cEx", { type: "line", data: { labels: pts.map((p) => fmtD(p.date)), datasets: [{ label: e.bodyweight ? "Лучший подход" : "Расчётный максимум", data: pts.map((p) => p.value),
+      borderColor: "#ff7a1a", borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: "#ff7a1a", pointBorderColor: "#1c1916", pointBorderWidth: 2, tension: 0.25 }] },
+    options: { scales: { x: { grid: { display: false } }, y: { grace: "20%", ticks: { maxTicksLimit: 4, callback: (v) => v + " " + unit } } },
+      plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${n1(c.parsed.y)} ${unit}` } } } } });
+  const first = pts[0].value, last = pts[pts.length - 1].value;
+  $("#exNote").textContent = pts.length < 2 ? (e.bodyweight ? "Пока одна тренировка — после следующей увидишь динамику." : "Расчётный максимум на 1 повтор. После следующей тренировки появится динамика.")
+    : `С ${fmtD(pts[0].date)}: ${last >= first ? "+" : ""}${n1(last - first)} ${unit} (${last >= first ? "+" : ""}${Math.round((last / first - 1) * 100)}%)`;
+}
+
+load().then(render).catch((e) => { $("#app").innerHTML = `<div class="err">${esc(e.message)}</div>`; });
+</script>
+</body>
+</html>
