@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UglyDuck CRM</title>
+<!-- CRM-панель беты бота-тренера. v1.0 (27.11.2026). Данные: functions/v1/admin (admin_dashboard, admin_user). -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: шапка с KPI, ниже сетка карточек-разделов; таблицы людей и когорт прокручиваются внутри себя */
+:root{
+  --bg:#f3f4f2; --paper:#fff; --fg:#1a201e; --muted:#5e6964; --line:#dde2df;
+  --accent:#d9480f; --accent-soft:#fdece3; --a2:#0f766e; --a2-soft:#e0f2ef; --good:#15803d; --bad:#b91c1c;
+  --body:"Manrope",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1312; --paper:#171d1b; --fg:#e6ebe8; --muted:#97a39e; --line:#29312e;
+  --accent:#ff8a4c; --accent-soft:#2c1c12; --a2:#2dd4bf; --a2-soft:#0f2e2a; --good:#4ade80; --bad:#f87171; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1312; --paper:#171d1b; --fg:#e6ebe8; --muted:#97a39e; --line:#29312e;
+  --accent:#ff8a4c; --accent-soft:#2c1c12; --a2:#2dd4bf; --a2-soft:#0f2e2a; --good:#4ade80; --bad:#f87171; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;line-height:1.45}
+.wrap{max-width:1120px;margin:0 auto;padding-block:20px 48px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:24px;font-weight:800}
+h2{margin:0;font-size:15px;font-weight:800}
+.muted{color:var(--muted);font-size:12.5px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.seg{display:flex;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{font:inherit;font-size:12.5px;border:0;background:transparent;color:var(--fg);padding:5px 11px;border-radius:999px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi .v{font-family:var(--mono);font-size:22px;font-weight:600}
+.kpi .l{font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card.wide{grid-column:1/-1}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--paper)}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
+.bar{height:22px;background:var(--accent-soft);border-radius:6px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:6px}
+.frow{display:grid;grid-template-columns:170px 1fr 90px;gap:10px;align-items:center;font-size:13px}
+.chart{width:100%;height:170px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.pill{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:999px;background:var(--a2-soft);color:var(--a2)}
+.pill.off{background:var(--accent-soft);color:var(--accent)}
+.heat{display:inline-block;min-width:42px;text-align:center;border-radius:6px;padding:2px 4px;font-family:var(--mono)}
+label.f{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:13px}
+label.f input{width:110px;font:inherit;font-family:var(--mono);padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.econ{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#detail{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;justify-content:flex-end;z-index:20}
+#detail .panel{width:min(560px,100%);height:100%;overflow:auto;background:var(--bg);padding:18px max(16px,env(safe-area-inset-right,0px)) 40px 16px;display:flex;flex-direction:column;gap:12px}
+#detail button.close{align-self:flex-end;font:inherit;border:1px solid var(--line);background:var(--paper);color:var(--fg);border-radius:8px;padding:6px 12px;cursor:pointer}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.err{background:var(--paper);border:1px solid var(--bad);border-radius:12px;padding:16px}
+ul.mem{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+@media (max-width:760px){.grid,.econ{grid-template-columns:1fr}.frow{grid-template-columns:120px 1fr 70px}}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>UglyDuck CRM</h1><div class="muted" id="gen">загружаю…</div></div>
+    <div class="seg" id="range"><button data-d="7">7 дн</button><button data-d="30" aria-pressed="true">30 дн</button><button data-d="90">90 дн</button></div>
+  </header>
+  <div id="app"></div>
+</div>
+<div id="detail" hidden><div class="panel" id="dpanel"></div></div>
+<script>
+const API = "https://pfdiblftrpeqjabuppcw.supabase.co/functions/v1/admin";
+const USD_UZS = 12002;
+const tg = window.Telegram?.WebApp; try { tg?.ready(); tg?.expand(); } catch {}
+if (tg?.colorScheme) document.documentElement.dataset.theme = tg.colorScheme;
+// Ключ для открытия в браузере: admin.html#t=КЛЮЧ (запоминается на этом устройстве)
+let token = null;
+try { const m = location.hash.match(/t=([^&]+)/); if (m) { localStorage.setItem("crm_t", m[1]); history.replaceState(null, "", location.pathname); } token = localStorage.getItem("crm_t"); } catch {}
+const mock = new URLSearchParams(location.search).get("mock");
+async function api(q) {
+  if (mock) return (await fetch(mock)).json();
+  const h = {};
+  if (tg?.initData) h["x-tg-init-data"] = tg.initData; else if (token) h["x-admin-token"] = token;
+  const r = await fetch(API + q, { headers: h });
+  if (!r.ok) throw new Error(r.status === 403 ? "Нет доступа: открой из бота командой /crm" : "Ошибка " + r.status);
+  return r.json();
+}
+const $ = (n, d = 2) => "$" + (+n || 0).toFixed(d);
+const N = (n) => (+n || 0).toLocaleString("ru-RU");
+const pct = (a, b) => b ? Math.round(100 * a / b) + "%" : "—";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ago = (d) => { if (!d) return "—"; const n = Math.round((Date.parse(new Date().toISOString().slice(0,10)) - Date.parse(d)) / 864e5); return n <= 0 ? "сегодня" : n === 1 ? "вчера" : n + " дн назад"; };
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+let days = 30, data = null;
+document.querySelectorAll("#range button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#range button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  days = +b.dataset.d; load();
+});
+
+async function load() {
+  try { data = await api("?days=" + days); render(); }
+  catch (e) { document.getElementById("app").innerHTML = `<div class="err">${esc(e.message)}</div>`; document.getElementById("gen").textContent = ""; }
+}
+
+// Столбики по дням + линия расходов на ИИ (SVG, одна шкала на всё, линия — своя шкала справа)
+function dailyChart(rows) {
+  const W = 1000, H = 170, P = 26, bw = (W - P * 2) / rows.length;
+  const maxBar = Math.max(1, ...rows.map((r) => Math.max(r.dau, r.installs, r.onboarded)));
+  const maxAi = Math.max(0.0001, ...rows.map((r) => +r.ai_usd));
+  const y = (v) => H - P - (H - P * 2) * v / maxBar, yA = (v) => H - P - (H - P * 2) * v / maxAi;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Активность по дням">`;
+  for (let g = 0; g <= 2; g++) { const v = maxBar * g / 2, yy = y(v); s += `<line x1="${P}" x2="${W - P}" y1="${yy}" y2="${yy}" stroke="${css("--line")}"/><text x="2" y="${yy + 4}" font-size="11" fill="${css("--muted")}">${Number.isInteger(v) ? v : v.toFixed(1)}</text>`; }
+  rows.forEach((r, i) => {
+    const x = P + i * bw;
+    s += `<rect x="${x + bw * .12}" y="${y(r.dau)}" width="${bw * .38}" height="${H - P - y(r.dau)}" fill="${css("--accent")}" rx="2"><title>${r.d}: активных ${r.dau}</title></rect>`;
+    s += `<rect x="${x + bw * .52}" y="${y(r.installs)}" width="${bw * .36}" height="${H - P - y(r.installs)}" fill="${css("--a2")}" rx="2"><title>${r.d}: запусков ${r.installs}</title></rect>`;
+    if (i % Math.ceil(rows.length / 8) === 0) s += `<text x="${x + bw / 2}" y="${H - 6}" font-size="11" text-anchor="middle" fill="${css("--muted")}">${r.d.slice(8, 10)}.${r.d.slice(5, 7)}</text>`;
+  });
+  s += `<polyline fill="none" stroke="${css("--fg")}" stroke-width="2" stroke-dasharray="4 3" points="${rows.map((r, i) => `${P + i * bw + bw / 2},${yA(+r.ai_usd)}`).join(" ")}"/>`;
+  return s + "</svg>";
+}
+
+function render() {
+  const d = data, k = d.kpi, u = d.users;
+  document.getElementById("gen").textContent = `обновлено ${new Date(d.generated_at).toLocaleString("ru-RU")} · период ${d.days} дн`;
+  const onb = u.filter((x) => x.onboarded);
+  const r1 = onb.filter((x) => x.age_days >= 1), r7 = onb.filter((x) => x.age_days >= 7);
+  const perActive = k.mau ? k.ai_usd_30 / k.mau : 0;
+  const rows = d.daily;
+  const sum = (f) => rows.reduce((t, r) => t + +r[f], 0);
+  const F = d.funnel, f0 = F[0]?.n || 0;
+
+  document.getElementById("app").innerHTML = `
+  <div class="kpis">
+    ${[[N(k.installs), "запустили бота"], [N(k.users), "прошли анкету"], [`${k.dau} / ${k.wau} / ${k.mau}`, "активны: день / неделя / месяц"],
+       [pct(r1.filter((x) => x.r1).length, r1.length), "вернулись на 2-й день"], [pct(r7.filter((x) => x.r7).length, r7.length), "вернулись через неделю"],
+       [k.push_rate_7 == null ? "—" : k.push_rate_7 + "%", "отвечают на пуши (7 дн)"], [$(k.ai_usd_30), "ИИ за 30 дней"], [$(perActive), "ИИ на активного в месяц"]]
+      .map(([v, l]) => `<div class="kpi"><span class="v">${v}</span><span class="l">${l}</span></div>`).join("")}
+  </div>
+  <div class="grid">
+    <section class="card wide">
+      <h2>Активность по дням</h2>
+      <div class="legend"><span><i class="dot" style="background:var(--accent)"></i>активные люди</span><span><i class="dot" style="background:var(--a2)"></i>новые запуски</span><span>- - расход на ИИ (своя шкала)</span></div>
+      ${dailyChart(rows)}
+      <div class="muted">За период: ${N(sum("installs"))} запусков · ${N(sum("onboarded"))} прошли анкету · ${N(sum("msgs"))} сообщений · ${N(sum("meals"))} записей еды (${N(sum("meal_photos"))} фото) · ${N(sum("pushes"))} пушей, ответили ${pct(sum("push_replied"), sum("pushes"))} · ИИ ${$(sum("ai_usd"), 3)}</div>
+    </section>
+    <section class="card">
+      <h2>Воронка</h2>
+      ${F.map((s, i) => `<div class="frow"><span>${esc(s.step)}</span><div class="bar"><i style="width:${f0 ? 100 * s.n / f0 : 0}%"></i></div><span class="num">${s.n}${i ? ` · ${pct(s.n, F[i - 1].n)}` : ""}</span></div>`).join("")}
+      <div class="muted">Процент — от предыдущего шага.${d.onb_drop.length ? " Бросили анкету на шаге: " + d.onb_drop.map((x) => `${esc(x.step)} — ${x.n}`).join(", ") : ""}</div>
+    </section>
+    <section class="card">
+      <h2>Что используют</h2>
+      ${(() => { const mx = Math.max(1, ...d.features.map((x) => +x.n)); return d.features.sort((a, b) => b.n - a.n).map((x) => `<div class="frow"><span>${esc(x.f)}</span><div class="bar"><i style="width:${100 * x.n / mx}%;background:var(--a2)"></i></div><span class="num">${N(x.n)}</span></div>`).join(""); })()}
+    </section>
+    <section class="card wide">
+      <h2>Люди</h2>
+      <div class="tw"><table>
+        <thead><tr><th>Кто</th><th>Анкета</th><th>Откуда</th><th>Был</th><th class="n">Дней</th><th class="n">Сообщ.</th><th class="n">Еда</th><th class="n">Зал</th><th class="n">Пуши, ответ</th><th class="n">ИИ $</th><th class="n">ИИ $/30д</th></tr></thead>
+        <tbody>${u.map((x) => `<tr class="click" data-u="${x.user_id}"><td>${esc(x.name ?? x.user_id)}</td><td>${x.onboarded ? '<span class="pill">да</span>' : '<span class="pill off">нет</span>'}</td><td>${esc(x.invite_code ?? "—")}</td><td>${ago(x.last_active)}</td><td class="n">${x.active_days}</td><td class="n">${x.msgs}</td><td class="n">${x.meals}</td><td class="n">${x.workouts}</td><td class="n">${x.pushes ? `${x.pushes} · ${pct(x.push_replied, x.pushes)}` : "—"}</td><td class="n">${(+x.ai_usd).toFixed(3)}</td><td class="n">${(+x.ai_usd_30).toFixed(3)}</td></tr>`).join("") || `<tr><td colspan="11" class="muted">Пока никого. Отправь боту /invite 5.</td></tr>`}</tbody>
+      </table></div>
+      <div class="muted">Нажми на человека — карточка: профиль, нормы, память тренера, дни, пуши, последние события.</div>
+    </section>
+    <section class="card">
+      <h2>Удержание по неделям входа</h2>
+      <div class="tw"><table>
+        <thead><tr><th>Неделя</th><th class="n">Людей</th><th class="n">2-й день</th><th class="n">3-й</th><th class="n">7-й</th><th class="n">14-й</th><th class="n">30-й</th></tr></thead>
+        <tbody>${d.cohorts.map((c) => `<tr><td>${c.wk}</td><td class="n">${c.n}</td>${[["e1","r1"],["e3","r3"],["e7","r7"],["e14","r14"],["e30","r30"]].map(([e, r]) => { if (!c[e]) return '<td class="n muted">—</td>'; const p = Math.round(100 * c[r] / c[e]); return `<td class="n"><span class="heat" style="background:color-mix(in srgb, var(--a2) ${p}%, transparent)">${p}%</span></td>`; }).join("")}</tr>`).join("") || '<tr><td colspan="7" class="muted">Нет данных</td></tr>'}</tbody>
+      </table></div>
+      <div class="muted">«Вернулся на N-й день» — написал боту в N-й день после входа или позже. Прочерк — когорта ещё не дожила.</div>
+    </section>
+    <section class="card">
+      <h2>Пуши</h2>
+      <div class="tw"><table>
+        <thead><tr><th>Тип</th><th class="n">Отправлено</th><th class="n">Ответили</th><th class="n">Отклик</th></tr></thead>
+        <tbody>${d.pushes.map((p) => `<tr><td>${esc(PUSH[p.kind] ?? p.kind)}</td><td class="n">${p.sent}</td><td class="n">${p.replied}</td><td class="n">${pct(p.replied, p.sent)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">Пушей за период не было</td></tr>'}</tbody>
+      </table></div>
+      <div class="muted">Ответ — человек написал или нажал кнопку в течение 2 часов после пуша.</div>
+    </section>
+    <section class="card wide">
+      <h2>Деньги</h2>
+      <div class="econ">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label class="f" for="e-price"><span>Цена подписки, сум в месяц</span><input id="e-price" type="number" value="100000"></label>
+          <label class="f" for="e-conv"><span>Платят из активных, %</span><input id="e-conv" type="number" value="30"></label>
+          <label class="f" for="e-fee"><span>Комиссия Payme + налог ИП, %</span><input id="e-fee" type="number" value="3"></label>
+          <label class="f" for="e-fix"><span>Сервисы в месяц, $ (Supabase, голос)</span><input id="e-fix" type="number" value="0"></label>
+          <div class="muted">Активных за 30 дней: ${k.mau}. Расход на ИИ берётся из реального учёта: ${$(k.ai_usd_30)} за 30 дней.</div>
+        </div>
+        <div class="tw"><table id="econ"></table></div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>На что ушло (период)</th><th>Модель</th><th class="n">Вызовов</th><th class="n">$</th></tr></thead>
+        <tbody>${d.ai.map((a) => `<tr><td>${esc(AI[a.kind] ?? a.kind)}</td><td>${esc(a.model)}</td><td class="n">${N(a.calls)}</td><td class="n">${(+a.usd).toFixed(4)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">Нет данных</td></tr>'}</tbody>
+      </table></div>
+    </section>
+  </div>`;
+  document.querySelectorAll("tr.click").forEach((tr) => tr.onclick = () => openUser(tr.dataset.u));
+  ["e-price", "e-conv", "e-fee", "e-fix"].forEach((id) => document.getElementById(id).oninput = econ);
+  econ();
+}
+
+const PUSH = { morning: "Утро 08:00", evening: "Итог дня 21:00", breakfast: "Завтрак был?", pulse: "Середина дня", snack: "Перекус", gym_pre: "План перед залом", gym_post: "Как зал?", dinner: "Ужин", silence1: "Тишина 1 день", silence2: "Тишина 2 дня", silence4: "Тишина 4 дня", silence7: "Тишина 7 дней", silence14: "Пауза 14 дней" };
+const AI = { structured: "Фото, разбор текста, чек", coach: "Ответы тренера", coach_answer: "Сообщения по расписанию, память", menu: "Фото меню" };
+
+function econ() {
+  const k = data.kpi, v = (id) => +document.getElementById(id).value || 0;
+  const priceUsd = v("e-price") / USD_UZS, net = priceUsd * (1 - v("e-fee") / 100);
+  const share = Math.max(0.01, v("e-conv") / 100), payers = k.mau * share;
+  const perActive = k.mau ? k.ai_usd_30 / k.mau : 0;
+  const perPayer = perActive / share; // платящий «везёт» на себе и бесплатных
+  const rev = payers * net, ai = k.ai_usd_30, fix = v("e-fix"), profit = rev - ai - fix;
+  const r = (l, val, c = "") => `<tr><td>${l}</td><td class="n ${c}">${val}</td></tr>`;
+  document.getElementById("econ").innerHTML = `<tbody>
+    ${r("Платили бы", payers.toFixed(1) + " чел.")}
+    ${r("С одного доходит", $(net))}
+    ${r("ИИ на активного в месяц", $(perActive, 3))}
+    ${r("ИИ на платящего (с бесплатными)", $(perPayer, 3))}
+    ${r("Маржа с платящего", $(net - perPayer) + " · " + pct(net - perPayer, net), net > perPayer ? "pos" : "neg")}
+    ${r("Выручка в месяц", $(rev))}
+    ${r("ИИ + сервисы", $(-(ai + fix)))}
+    ${r("<b>Прибыль в месяц</b>", "<b>" + $(profit) + "</b>", profit >= 0 ? "pos" : "neg")}
+  </tbody>`;
+}
+
+async function openUser(id) {
+  const box = document.getElementById("detail"), p = document.getElementById("dpanel");
+  box.hidden = false; p.innerHTML = '<button class="close">Закрыть</button><div class="muted">загружаю…</div>';
+  p.querySelector(".close").onclick = () => box.hidden = true;
+  try {
+    const x = await api("?user=" + id);
+    const us = x.user ?? {}, pr = us.profile ?? {}, t = x.targets ?? {}, mem = x.memory ?? [];
+    const dd = x.days ?? [];
+    const kcalT = t.kcal_rest || 0;
+    p.innerHTML = `<button class="close">Закрыть</button>
+      <h1>${esc(us.name ?? id)}</h1>
+      <div class="muted">с ${String(us.created_at ?? "").slice(0, 10)} · ${esc(us.invite_code ?? "")} · ${us.onboarded ? "анкета пройдена" : "анкета: шаг " + esc(pr.step)}</div>
+      <section class="card"><h2>Профиль и нормы</h2>
+        <div>${[pr.sex === "f" ? "женщина" : pr.sex === "m" ? "мужчина" : null, pr.age && pr.age + " лет", pr.height && pr.height + " см", pr.weight && pr.weight + " кг", pr.target && "цель " + pr.target + " кг", pr.level === "new" ? "новичок" : pr.level === "exp" ? "с опытом" : null].filter(Boolean).join(" · ") || "—"}</div>
+        ${t.kcal_train ? `<div class="num">${t.kcal_train}/${t.kcal_rest} ккал · белок ${t.protein_g} · жир до ${t.fat_max_g} · ${esc(t.phase)}</div>` : ""}
+        ${pr.why ? `<div><b>Зачем:</b> ${esc(pr.why)}</div>` : ""}
+        <div class="muted">Зал: ${esc(JSON.stringify(x.settings?.gym_days ?? "—"))} в ${esc(x.settings?.gym_time ?? "—")} · пуши: ${esc(x.settings?.push_mode ?? "normal")}${x.settings?.push_paused ? " (на паузе)" : ""}</div>
+      </section>
+      <section class="card"><h2>Память тренера</h2>${mem.length ? `<ul class="mem">${mem.map((m) => `<li>${esc(m.fact)} <span class="muted">${esc(m.at)}</span></li>`).join("")}</ul>` : '<div class="muted">пусто</div>'}</section>
+      <section class="card"><h2>Последние 30 дней</h2><div class="tw"><table>
+        <thead><tr><th>День</th><th class="n">Ккал</th><th class="n">Белок</th><th class="n">Жир</th><th class="n">Записей</th><th class="n">Вес</th><th class="n">Зал</th></tr></thead>
+        <tbody>${dd.filter((r) => r.meals || r.weight || r.exercises_done).reverse().map((r) => `<tr><td>${r.date}</td><td class="n" style="color:${kcalT && r.kcal > kcalT * 1.1 ? "var(--bad)" : "inherit"}">${Math.round(r.kcal)}</td><td class="n">${Math.round(r.protein)}</td><td class="n">${Math.round(r.fat)}</td><td class="n">${r.meals}</td><td class="n">${r.weight ?? ""}</td><td class="n">${r.exercises_done || ""}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">нет записей</td></tr>'}</tbody></table></div></section>
+      <section class="card"><h2>Пуши</h2>${(x.pushes ?? []).map((q) => `<div>${esc(PUSH[q.kind] ?? q.kind)}: ${q.sent}, ответил ${pct(q.replied, q.sent)}</div>`).join("") || '<div class="muted">не было</div>'}</section>
+      <section class="card"><h2>Расход на ИИ по дням</h2>${(x.ai_by_day ?? []).map((a) => `<div class="num">${a.d}: $${(+a.usd).toFixed(4)} · ${a.calls} вызовов</div>`).join("") || '<div class="muted">нет</div>'}</section>
+      <section class="card"><h2>События</h2>${(x.events ?? []).map((e) => `<div><span class="num muted">${new Date(e.ts).toLocaleString("ru-RU")}</span> ${esc(e.name)} ${e.props && Object.keys(e.props).length ? `<span class="muted">${esc(JSON.stringify(e.props))}</span>` : ""}</div>`).join("") || '<div class="muted">нет</div>'}</section>
+      <section class="card"><h2>Последние сообщения</h2>${(x.last_msgs ?? []).map((m) => `<div><span class="num muted">${new Date(m.ts).toLocaleString("ru-RU")}</span> ${m.direction === "in" ? "👤" : "🤖"} ${esc(m.text)}</div>`).join("")}</section>`;
+    p.querySelector(".close").onclick = () => box.hidden = true;
+  } catch (e) { p.innerHTML += `<div class="err">${esc(e.message)}</div>`; }
+}
+document.getElementById("detail").onclick = (e) => { if (e.target.id === "detail") e.currentTarget.hidden = true; };
+load();
+</script>
+</body>
+</html>
